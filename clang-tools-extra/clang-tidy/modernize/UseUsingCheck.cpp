@@ -43,13 +43,17 @@ void UseUsingCheck::storeOptions(ClangTidyOptions::OptionMap &Opts) {
 }
 
 void UseUsingCheck::registerMatchers(MatchFinder *Finder) {
-  Finder->addMatcher(
+    Finder->addMatcher(
       typedefDecl(
           unless(isInstantiated()),
           optionally(hasAncestor(
               linkageSpecDecl(isExternCLinkage()).bind(ExternCDeclName))),
-          anyOf(hasParent(decl().bind(ParentDeclName)),
-                hasParent(declStmt().bind(DeclStmtName))))
+          anyOf(
+              hasParent(decl().bind(ParentDeclName)),
+              hasParent(declStmt().bind(DeclStmtName)),
+              hasAncestor(cxxRecordDecl().bind("classDecl")),  // Matcher for class typedefs
+              hasAncestor(functionDecl().bind("functionDecl")) // Matcher for function typedefs
+          ))
           .bind(TypedefName),
       this);
 
@@ -72,6 +76,16 @@ void UseUsingCheck::registerMatchers(MatchFinder *Finder) {
 
 void UseUsingCheck::check(const MatchFinder::MatchResult &Result) {
   const auto *ParentDecl = Result.Nodes.getNodeAs<Decl>(ParentDeclName);
+  const auto *ClassDecl = Result.Nodes.getNodeAs<CXXRecordDecl>("classDecl");
+  const auto *FunctionDecl = Result.Nodes.getNodeAs<FunctionDecl>("functionDecl");
+
+  if (!ParentDecl) {
+    if (ClassDecl) {
+      ParentDecl = ClassDecl;
+    } else if (FunctionDecl) {
+      ParentDecl = FunctionDecl;
+    }
+  }
 
   if (!ParentDecl) {
     const auto *ParentDeclStmt = Result.Nodes.getNodeAs<DeclStmt>(DeclStmtName);
